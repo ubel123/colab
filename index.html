@@ -1,186 +1,224 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Minimal Balance — ONNX Hyper-Casual</title>
 <style>
-:root{
-  --bg1: #f6fbff;
-  --bg2: #e9f7ff;
-  --accent: #4da6ff;
-  --muted: #8aaac6;
-  --card: rgba(255,255,255,0.75);
-}
-html,body{
-  height:100%; margin:0; display:flex; align-items:center; justify-content:center;
-  font-family: Inter, system-ui, -apple-system; background: linear-gradient(180deg,var(--bg1),var(--bg2));
-}
-.wrap{display:flex; flex-direction:column; align-items:center; gap:18px; user-select:none;}
-.canvas-card{
-  width:640px; padding:20px; border-radius:22px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(250,250,255,0.85));
-  box-shadow: 0 10px 30px rgba(30,50,80,0.12); display:flex; justify-content:center;
-}
-canvas{display:block; width:600px;height:400px; border-radius:12px; background:transparent; box-shadow: inset 0 -8px 30px rgba(50,90,150,0.02), 0 6px 18px rgba(20,40,70,0.08);}
-.hud{display:flex; gap:12px; align-items:center; color:var(--muted); font-size:13px;}
-.pill{background:var(--card); padding:8px 12px; border-radius:999px; display:flex; gap:8px; align-items:center; box-shadow: 0 2px 8px rgba(20,40,70,0.04);}
-.dot{width:10px;height:10px;border-radius:50%;background:var(--accent);}
-#status{font-weight:600;color:#125a9c;}
-.score{font-weight:700;font-size:16px;color:#11385a;}
-.pulse{width:10px;height:10px;border-radius:50%;background:var(--accent);opacity:0.95;transform-origin:center;animation: pulse 1s infinite ease-in-out;}
-@keyframes pulse{0%{transform:scale(0.7);opacity:0.6;}50%{transform:scale(1.15);opacity:1;}100%{transform:scale(0.7);opacity:0.6;}}
-.critique-box{margin-top:8px;padding:10px 12px;border-radius:10px;background: rgba(255,255,255,0.6); font-size:12px; color:#4a5968; max-width:600px; line-height:1.25;}
+  :root {
+    --bg1: #f6fbff;
+    --bg2: #e9f7ff;
+    --accent: #4da6ff;
+    --muted: #8aaac6;
+    --card: rgba(255,255,255,0.75);
+  }
+  html, body {
+    height: 100%; margin:0; display:flex; justify-content:center; align-items:center;
+    background: linear-gradient(180deg, var(--bg1), var(--bg2));
+    font-family: Inter, system-ui, -apple-system;
+  }
+  .canvas-card {
+    width: 640px; padding: 20px; border-radius: 22px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(250,250,255,0.85));
+    box-shadow: 0 10px 30px rgba(30,50,80,0.12);
+    display: flex; justify-content:center;
+  }
+  canvas {
+    width: 600px; height: 400px; border-radius:12px;
+    background: transparent;
+    box-shadow: inset 0 -8px 30px rgba(50,90,150,0.02), 0 6px 18px rgba(20,40,70,0.08);
+  }
+  .hud {
+    display:flex; gap:12px; margin-top:12px; color:var(--muted); font-size:13px;
+  }
+  .pill {
+    background: var(--card); padding:8px 12px; border-radius:999px;
+    display:flex; align-items:center; gap:8px;
+    box-shadow: 0 2px 8px rgba(20,40,70,0.04);
+  }
+  .score { font-weight:700; font-size:16px; color:#11385a; }
+  .pulse {
+    width:10px; height:10px; border-radius:50%; background:var(--accent);
+    opacity:0.95; transform-origin:center; animation:pulse 1s infinite ease-in-out;
+  }
+  @keyframes pulse {
+    0% { transform: scale(0.7); opacity:0.6; }
+    50% { transform: scale(1.15); opacity:1; }
+    100% { transform: scale(0.7); opacity:0.6; }
+  }
 </style>
 </head>
 <body>
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-<div class="wrap">
-  <div class="canvas-card">
-    <canvas id="game" width="600" height="400"></canvas>
+<div class="canvas-card">
+  <canvas id="gameCanvas" width="600" height="400"></canvas>
+</div>
+<div class="hud">
+  <div class="pill">
+    <div id="loader" class="pulse"></div>
+    <div id="status">모델 로드 중...</div>
   </div>
-  <div class="hud">
-    <div class="pill">
-      <div id="loader" class="pulse" style="display:none"></div>
-      <div id="status">모델 로드 전</div>
-    </div>
-    <div class="pill">
-      <div class="score" id="score">0</div>
-      <div style="color:var(--muted); font-size:12px;">score</div>
-    </div>
-    <div class="pill">
-      <div style="font-size:13px; color:var(--muted);">steps</div>
-      <div id="steps" style="font-weight:700; margin-left:6px;">0</div>
-    </div>
+  <div class="pill">
+    <div class="score" id="score">0</div>
+    <div style="font-size:12px;color:var(--muted)">score</div>
   </div>
-  <div id="critique" class="critique-box">
-    <strong>Self-check:</strong>
-    <ul>
-      <li>입력: 물리 상태 [카트 위치, 카트 속도, 막대 각도, 막대 각속도]</li>
-      <li>정규화: 각 변수를 적절한 범위로 스케일링</li>
-      <li>출력: argmax 또는 continuous 처리</li>
-    </ul>
+  <div class="pill">
+    <div style="font-size:12px;color:var(--muted)">steps</div>
+    <div id="steps" style="font-weight:700">0</div>
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
 <script>
 (async()=>{
-const W=600,H=400;
-const OBS_SHAPE=[1,4]; // 1. 입력 형태를 [1, 4]로 변경
-const MODEL_URL='./model.onnx';
-const INFERENCE_FPS=30;
-const INFERENCE_FRAME_SKIP=Math.max(1,Math.floor(60/INFERENCE_FPS));
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
 
-const canvas=document.getElementById('game');
-const ctx=canvas.getContext('2d',{alpha:false, desynchronized:true});
+  const scoreEl = document.getElementById('score');
+  const stepsEl = document.getElementById('steps');
+  const statusEl = document.getElementById('status');
+  const loaderEl = document.getElementById('loader');
 
-const statusEl=document.getElementById('status');
-const loaderEl=document.getElementById('loader');
-const scoreEl=document.getElementById('score');
-const stepsEl=document.getElementById('steps');
+  // ---- Game state
+  let state = {
+    cartX:0, cartV:0, poleAngle:0.05*(Math.random()-0.5), poleV:0,
+    steps:0, score:0, running:true
+  };
 
-let state={
-  cartX:0, cartV:0, poleAngle:0.06*(Math.random()-0.5), poleOmega:0,
-  score:0, steps:0, running:true, lastActionTime:0
-};
-const physical={dt:1/60, cartMass:1.0, poleMass:0.1, poleLength:120, gravity:9.81, forceMag:35, friction:0.02};
-function resetState(){state.cartX=0;state.cartV=0;state.poleAngle=0.06*(Math.random()-0.5);state.poleOmega=0;state.score=0;state.steps=0;state.running=true;}
+  const physical = {
+    dt:1/50, cartMass:1.0, poleMass:0.1, poleLength:120, gravity:9.81, forceMag:15000.0
+  };
 
-function drawBackground(){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#f8fdff');g.addColorStop(1,'#eaf8ff');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);}
+  const OBS_SHAPE=[1,4]; // matches Python env
+  const MODEL_URL='./model.onnx';
 
-// 2. 막대 그리기 로직 추가
-function drawScene(){
-  ctx.clearRect(0,0,W,H);
-  drawBackground();
-  const centerX = W / 2 + state.cartX;
-  const cartY = H - 90;
-
-  // 막대 그리기
-  ctx.save();
-  ctx.translate(centerX, cartY - 28);
-  ctx.rotate(state.poleAngle);
-  ctx.beginPath();
-  ctx.strokeStyle = 'var(--muted)';
-  ctx.lineWidth = 14;
-  ctx.lineCap = 'round';
-  ctx.moveTo(0, 0);
-  ctx.lineTo(0, -physical.poleLength);
-  ctx.stroke();
-  ctx.restore();
-  
-  // 카트 그리기
-  ctx.save();
-  ctx.beginPath();
-  ctx.fillStyle = '#ffffff';
-  ctx.strokeStyle = 'rgba(100,120,150,0.1)';
-  ctx.lineWidth = 2;
-  ctx.rect(centerX - 72, cartY - 28, 144, 56);
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
-}
-
-function stepPhysics(actionIndex){
-  let torque=0;
-  if(typeof actionIndex==='object' && actionIndex.isContinuous) torque=actionIndex.value*physical.forceMag;
-  else {const N=actionIndex.N||3; const idx=actionIndex.idx; const center=(N-1)/2; torque=((idx-center)/center)*physical.forceMag;}
-  const dt=physical.dt;
-  state.cartV+=(torque/(physical.cartMass+physical.poleMass))*dt;
-  state.cartV*=(1-physical.friction); state.cartX+=state.cartV*dt*40;
-  const gTerm=(physical.gravity/(physical.poleLength*0.1))*Math.sin(state.poleAngle);
-  const torqueEffect=-torque*0.001;
-  const damp=-0.03*state.poleOmega;
-  let alpha=gTerm+torqueEffect+damp;
-  state.poleOmega+=alpha*dt; state.poleOmega*=(1-0.005); state.poleAngle+=state.poleOmega*dt;
-  const maxX=(W/2)-90; if(state.cartX<-maxX){state.cartX=-maxX;state.cartV*=-0.2;} if(state.cartX>maxX){state.cartX=maxX;state.cartV*=-0.2;}
-  state.steps++; const ang=Math.abs(state.poleAngle); const reward=Math.max(0,(0.8-ang)*0.2); state.score+=reward;
-  if(ang>0.9) state.running=false;
-}
-
-// 3. 물리 상태로부터 직접 관찰 데이터 생성
-function buildObservationArray(){
-  const obs = new Float32Array(4);
-  obs[0] = state.cartX / (W / 2); // 카트 위치 정규화
-  obs[1] = state.cartV / 2;       // 카트 속도 정규화
-  obs[2] = state.poleAngle;      // 막대 각도
-  obs[3] = state.poleOmega;      // 막대 각속도
-  return obs;
-}
-
-let session=null,modelReady=false,lastInferenceFrame=0,frameCount=0;
-async function initModel(){
-  try{loaderEl.style.display='inline-block'; statusEl.textContent='모델 로드 중...';
-  session=await ort.InferenceSession.create(MODEL_URL); modelReady=true; loaderEl.style.display='none'; statusEl.textContent='모델 로드 완료';statusEl.style.color='#0b66a6'; console.log('ONNX model loaded:',session);}
-  catch(e){loaderEl.style.display='none'; statusEl.textContent='모델 로드 실패';statusEl.style.color='#b22222';console.error('Failed to load ONNX model',e);}
-}
-initModel();
-
-async function inferAndAct(){
-  if(!modelReady||!session) return null;
-  try{
-    const obsFloats=buildObservationArray();
-    const inputTensor=new ort.Tensor('float32', obsFloats, OBS_SHAPE);
-    const feeds={observation:inputTensor};
-    const results=await session.run(feeds);
-    let out=results['action']||results[Object.keys(results)[0]];
-    let outData=out.data||out.toTypedArray?.()||out;
-    if(outData.length>1){let maxIdx=0,maxVal=outData[0];for(let i=1;i<outData.length;i++){if(outData[i]>maxVal){maxVal=outData[i]; maxIdx=i;}} return {discrete:true, idx:maxIdx, N:outData.length};}
-    else{return {discrete:false,isContinuous:true,value:outData[0]};}
-  } catch(err){console.error('Inference error:',err); modelReady=false; statusEl.textContent='모델 오류'; statusEl.style.color='#b22222'; return null;}
-}
-
-function loop(){
-  frameCount++; drawScene();
-  if(state.running === false) { // 게임 오버 시 리셋
-      setTimeout(resetState, 1000);
+  // ---- Normalize observation
+  function buildObservation(){
+    // Follows Python environment:
+    return new Float32Array([
+      state.cartX / (W/2),
+      state.cartV / 200,
+      state.poleAngle / (Math.PI/180*12), // max_angle = 12 degrees
+      state.poleV / 10
+    ]);
   }
-  if(modelReady&&(frameCount-lastInferenceFrame)>=INFERENCE_FRAME_SKIP && state.running){lastInferenceFrame=frameCount;
-    inferAndAct().then(actionInfo=>{if(actionInfo) stepPhysics(actionInfo);});
+
+  // ---- Physics
+  function stepPhysics(actionIndex){
+    let force=0;
+    if(actionIndex.discrete){
+      const mapping = {0:-physical.forceMag,1:0,2:physical.forceMag};
+      force = mapping[actionIndex.idx];
+    } else {
+      force = actionIndex.value*physical.forceMag;
+    }
+
+    // Simple Euler integration
+    const dt=physical.dt;
+    state.cartV += force/(physical.cartMass+physical.poleMass)*dt;
+    state.cartX += state.cartV*dt*40;
+
+    const gTerm = (physical.gravity/(physical.poleLength*0.1))*Math.sin(state.poleAngle);
+    const torqueEffect = -force*0.001;
+    const damp = -0.03*state.poleV;
+    let alpha = gTerm + torqueEffect + damp;
+
+    state.poleV += alpha*dt;
+    state.poleV *= 0.995;
+    state.poleAngle += state.poleV*dt;
+
+    const maxX = W/2 - 90;
+    if(state.cartX<-maxX){ state.cartX=-maxX; state.cartV*=-0.2; }
+    if(state.cartX>maxX){ state.cartX=maxX; state.cartV*=-0.2; }
+
+    state.steps++;
+    const ang = Math.abs(state.poleAngle);
+    const reward = Math.max(0,(0.8-ang)*0.2);
+    state.score += reward;
+    if(ang>0.9) state.running=false;
   }
-  scoreEl.textContent=Math.round(state.score*10); stepsEl.textContent=state.steps;
-  requestAnimationFrame(loop);
-}
-loop();
+
+  // ---- Draw
+  function drawScene(){
+    ctx.clearRect(0,0,W,H);
+
+    // Background
+    const g=ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#f8fdff'); g.addColorStop(1,'#eaf8ff');
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+    const centerX = W/2 + state.cartX;
+    const cartY = H - 90;
+
+    // Pole
+    ctx.save();
+    ctx.translate(centerX, cartY - 28);
+    ctx.rotate(state.poleAngle);
+    ctx.beginPath(); ctx.strokeStyle='var(--accent)'; ctx.lineWidth=14;
+    ctx.moveTo(0,0); ctx.lineTo(0,-physical.poleLength); ctx.stroke();
+    ctx.restore();
+
+    // Cart
+    ctx.save();
+    ctx.fillStyle='#ffffff'; ctx.strokeStyle='rgba(100,120,150,0.1)';
+    ctx.lineWidth=2;
+    ctx.fillRect(centerX-72,cartY-28,144,56);
+    ctx.strokeRect(centerX-72,cartY-28,144,56);
+    ctx.restore();
+  }
+
+  // ---- Load ONNX
+  let session=null,modelReady=false;
+  async function initModel(){
+    try{
+      loaderEl.style.display='inline-block';
+      session=await ort.InferenceSession.create(MODEL_URL);
+      modelReady=true;
+      loaderEl.style.display='none';
+      statusEl.textContent='모델 로드 완료';
+      statusEl.style.color='#0b66a6';
+    } catch(e){
+      loaderEl.style.display='none';
+      statusEl.textContent='모델 로드 실패';
+      statusEl.style.color='#b22222';
+      console.error('ONNX load error:',e);
+    }
+  }
+  await initModel();
+
+  // ---- AI inference
+  async function inferAndAct(){
+    if(!modelReady||!session) return null;
+    const inputTensor = new ort.Tensor('float32', buildObservation(), OBS_SHAPE);
+    const feeds = {'observation': inputTensor};
+    const results = await session.run(feeds);
+    let out = results['action']||results[Object.keys(results)[0]];
+    let outData = out.data || out.toTypedArray?.() || out;
+    if(outData.length>1){
+      let maxIdx=0,maxVal=outData[0];
+      for(let i=1;i<outData.length;i++){ if(outData[i]>maxVal){ maxVal=outData[i]; maxIdx=i; } }
+      return {discrete:true, idx:maxIdx, N:outData.length};
+    } else {
+      return {discrete:false, isContinuous:true, value:outData[0]};
+    }
+  }
+
+  // ---- Loop
+  let frameCount=0, INFERENCE_FPS=30;
+  function loop(){
+    frameCount++;
+    drawScene();
+    if(state.running===false){
+      setTimeout(()=>{ state.cartX=0; state.cartV=0; state.poleAngle=0.05*(Math.random()-0.5); state.poleV=0; state.score=0; state.steps=0; state.running=true; },1000);
+    }
+    if(modelReady && state.running && frameCount%(60/INFERENCE_FPS|0)===0){
+      inferAndAct().then(actionInfo=>{ if(actionInfo) stepPhysics(actionInfo); });
+    }
+    scoreEl.textContent=Math.round(state.score*10);
+    stepsEl.textContent=state.steps;
+    requestAnimationFrame(loop);
+  }
+  loop();
 })();
 </script>
 </body>
