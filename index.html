@@ -5,30 +5,95 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Minimal Balance — ONNX Hyper-Casual</title>
 <style>
-:root{
-  --bg1:#f6fbff; --bg2:#e9f7ff; --accent:#4da6ff; --muted:#8aaac6; --card:rgba(255,255,255,0.75);
+:root {
+  --bg1: #f6fbff;
+  --bg2: #e9f7ff;
+  --accent: #4da6ff;
+  --muted: #8aaac6;
+  --card: rgba(255,255,255,0.75);
 }
-html,body{
-  height:100%; margin:0; display:flex; justify-content:center; align-items:center;
-  font-family:Inter, system-ui,-apple-system; background:linear-gradient(180deg,var(--bg1),var(--bg2));
+html, body {
+  margin: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Inter, system-ui, -apple-system;
+  background: linear-gradient(180deg,var(--bg1),var(--bg2));
 }
-.wrap{display:flex; flex-direction:column; align-items:center; gap:18px; user-select:none;}
-.canvas-card{
-  width:640px; padding:20px; border-radius:22px;
-  background:linear-gradient(180deg,rgba(255,255,255,0.9),rgba(250,250,255,0.85));
-  box-shadow:0 10px 30px rgba(30,50,80,0.12); display:flex; justify-content:center;
+.wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  user-select: none;
 }
-canvas{display:block; width:600px;height:400px; border-radius:12px; background:transparent;
-  box-shadow:inset 0 -8px 30px rgba(50,90,150,0.02),0 6px 18px rgba(20,40,70,0.08);}
-.hud{display:flex; gap:12px; align-items:center; color:var(--muted); font-size:13px;}
-.pill{background:var(--card); padding:8px 12px; border-radius:999px; display:flex; gap:8px; align-items:center;
-  box-shadow:0 2px 8px rgba(20,40,70,0.04);}
-#status{font-weight:600;color:#125a9c;}
-.score{font-weight:700;font-size:16px;color:#11385a;}
-.pulse{width:10px;height:10px;border-radius:50%;background:var(--accent);
-  opacity:0.95;transform-origin:center;animation:pulse 1s infinite ease-in-out;}
-@keyframes pulse{0%{transform:scale(0.7);opacity:0.6;}50%{transform:scale(1.15);opacity:1;}100%{transform:scale(0.7);opacity:0.6;}}
-.critique-box{margin-top:8px;padding:10px 12px;border-radius:10px;background: rgba(255,255,255,0.6); font-size:12px; color:#4a5968; max-width:600px; line-height:1.25;}
+.canvas-card {
+  width: 640px;
+  padding: 20px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(250,250,255,0.85));
+  box-shadow: 0 10px 30px rgba(30,50,80,0.12);
+  display: flex;
+  justify-content: center;
+}
+canvas {
+  display: block;
+  width: 600px;
+  height: 400px;
+  border-radius: 12px;
+  background: transparent;
+  box-shadow: inset 0 -8px 30px rgba(50,90,150,0.02), 0 6px 18px rgba(20,40,70,0.08);
+}
+.hud {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.pill {
+  background: var(--card);
+  padding: 8px 12px;
+  border-radius: 999px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(20,40,70,0.04);
+}
+#status {
+  font-weight: 600;
+  color: #125a9c;
+}
+.score {
+  font-weight: 700;
+  font-size: 16px;
+  color: #11385a;
+}
+.pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.95;
+  transform-origin: center;
+  animation: pulse 1s infinite ease-in-out;
+}
+@keyframes pulse {
+  0% { transform: scale(0.7); opacity: 0.6; }
+  50% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(0.7); opacity: 0.6; }
+}
+.critique-box {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.6);
+  font-size: 12px;
+  color: #4a5968;
+  max-width: 600px;
+  line-height: 1.25;
+}
 </style>
 </head>
 <body>
@@ -54,59 +119,101 @@ canvas{display:block; width:600px;height:400px; border-radius:12px; background:t
   <div id="critique" class="critique-box">
     <strong>Self-check:</strong>
     <ul>
-      <li>입력: [cart_x, cart_vx, pole_angle, pole_ang_vel]</li>
-      <li>정규화: Python과 동일</li>
-      <li>출력: Discrete 3개 또는 continuous 1개</li>
+      <li>입력: 물리 상태 [카트 위치, 카트 속도, 막대 각도, 막대 각속도]</li>
+      <li>정규화: 각 변수를 Python과 동일하게 스케일링</li>
+      <li>출력: argmax 또는 continuous 처리</li>
     </ul>
   </div>
 </div>
 
 <script>
 (async()=>{
-
 const W=600,H=400;
 const OBS_SHAPE=[1,4];
 const MODEL_URL='./model.onnx';
-const FPS=60;
-const SUBSTEPS=4;
 
 const canvas=document.getElementById('game');
 const ctx=canvas.getContext('2d',{alpha:false, desynchronized:true});
-
 const statusEl=document.getElementById('status');
 const loaderEl=document.getElementById('loader');
 const scoreEl=document.getElementById('score');
 const stepsEl=document.getElementById('steps');
 
-let state={cartX:0,cartV:0,poleAngle:0.06*(Math.random()-0.5),poleOmega:0,score:0,steps:0,running:true};
+// Python 환경과 최대한 동일한 물리 상수
+const physical = {
+  dt: 1/50,       // Python dt
+  cartMass: 1.0,
+  poleMass: 0.1,
+  poleLength: 120,
+  gravity: 9.81,
+  maxForce: 15000,
+  friction: 0.02
+};
 
-const PHYS={
-  dt:1/FPS,
-  cartMass:1.0,
-  poleMass:0.1,
-  poleLength:120,
-  gravity:9.81,
-  forceMag:15000, // Python과 동일
-  friction:0.02,
-  maxAngle:12*Math.PI/180 // 12도 radians
+let state = {
+  cartX:0, cartV:0,
+  poleAngle:0.06*(Math.random()-0.5),
+  poleOmega:0,
+  score:0, steps:0, running:true
 };
 
 function resetState(){
   state.cartX=0; state.cartV=0;
   state.poleAngle=0.06*(Math.random()-0.5);
-  state.poleOmega=0; state.score=0; state.steps=0; state.running=true;
+  state.poleOmega=0;
+  state.score=0; state.steps=0;
+  state.running=true;
 }
 
-function drawBackground(){
+// Python과 동일한 observation 생성
+function buildObservationArray(){
+  return new Float32Array([
+    state.cartX / (W/2),
+    Math.max(-1, Math.min(state.cartV / 200, 1)),
+    Math.max(-1, Math.min(state.poleAngle / (12*Math.PI/180), 1)),
+    Math.max(-1, Math.min(state.poleOmega / 10, 1))
+  ]);
+}
+
+// Physics update (Euler integration, substeps 4회)
+function stepPhysics(action){
+  let force=0;
+  if(action.discrete) {
+    const idx=action.idx;
+    force = {0:-physical.maxForce,1:0,2:physical.maxForce}[idx];
+  } else if(action.isContinuous){
+    force = action.value * physical.maxForce;
+  }
+  const dt = physical.dt/4;
+  for(let i=0;i<4;i++){
+    state.cartV += (force/(physical.cartMass+physical.poleMass))*dt;
+    state.cartV *= (1-physical.friction);
+    state.cartX += state.cartV*dt*40;
+    const gTerm = (physical.gravity/(physical.poleLength*0.1))*Math.sin(state.poleAngle);
+    const torqueEffect = -force*0.001;
+    const damp = -0.03*state.poleOmega;
+    let alpha = gTerm + torqueEffect + damp;
+    state.poleOmega += alpha*dt;
+    state.poleOmega *= (1-0.005);
+    state.poleAngle += state.poleOmega*dt;
+  }
+  const maxX=W/2-90;
+  if(state.cartX<-maxX){state.cartX=-maxX; state.cartV*=-0.2;}
+  if(state.cartX>maxX){state.cartX=maxX; state.cartV*=-0.2;}
+  const ang=Math.abs(state.poleAngle);
+  if(ang>0.9) state.running=false;
+  state.steps++;
+  state.score += Math.max(0,(0.8-ang)*0.2);
+}
+
+// Canvas draw
+function drawScene(){
+  ctx.clearRect(0,0,W,H);
   const g=ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0,'#f8fdff'); g.addColorStop(1,'#eaf8ff');
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-}
 
-function drawScene(){
-  ctx.clearRect(0,0,W,H);
-  drawBackground();
-  const centerX=W/2+state.cartX, cartY=H-90;
+  const centerX=W/2+state.cartX; const cartY=H-90;
 
   // Pole
   ctx.save();
@@ -115,115 +222,70 @@ function drawScene(){
   ctx.beginPath();
   ctx.strokeStyle='var(--muted)';
   ctx.lineWidth=14; ctx.lineCap='round';
-  ctx.moveTo(0,0); ctx.lineTo(0,-PHYS.poleLength); ctx.stroke();
-  ctx.restore();
+  ctx.moveTo(0,0); ctx.lineTo(0,-physical.poleLength);
+  ctx.stroke(); ctx.restore();
 
   // Cart
   ctx.save();
-  ctx.beginPath(); ctx.fillStyle='#ffffff';
-  ctx.strokeStyle='rgba(100,120,150,0.1)'; ctx.lineWidth=2;
-  ctx.rect(centerX-72, cartY-28, 144, 56);
-  ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#ffffff';
+  ctx.strokeStyle='rgba(100,120,150,0.1)';
+  ctx.lineWidth=2;
+  ctx.fillRect(centerX-72, cartY-28, 144, 56);
+  ctx.strokeRect(centerX-72, cartY-28, 144, 56);
   ctx.restore();
 }
 
-// Physics step (Python logic 그대로)
-function stepPhysics(action){
-  let torque=0;
-  if(action.isContinuous) torque=action.value*PHYS.forceMag;
-  else {
-    const idx=action.idx; const N=action.N||3; const center=(N-1)/2;
-    torque=((idx-center)/center)*PHYS.forceMag;
-  }
-
-  for(let i=0;i<SUBSTEPS;i++){
-    const dt=PHYS.dt/SUBSTEPS;
-    // Cart velocity
-    state.cartV+=(torque/(PHYS.cartMass+PHYS.poleMass))*dt;
-    state.cartV*=(1-PHYS.friction);
-    state.cartX+=state.cartV*dt*40;
-
-    // Pole
-    const gTerm=(PHYS.gravity/(PHYS.poleLength*0.1))*Math.sin(state.poleAngle);
-    const torqueEffect=-torque*0.001;
-    const damp=-0.03*state.poleOmega;
-    let alpha=gTerm+torqueEffect+damp;
-    state.poleOmega+=alpha*dt; state.poleOmega*=(1-0.005);
-    state.poleAngle+=state.poleOmega*dt;
-  }
-
-  const maxX=(W/2)-90;
-  if(state.cartX<-maxX){state.cartX=-maxX; state.cartV*=-0.2;}
-  if(state.cartX>maxX){state.cartX=maxX; state.cartV*=-0.2;}
-
-  state.steps++;
-  const ang=Math.abs(state.poleAngle);
-  const reward=Math.max(0,(0.8-ang)*0.2); state.score+=reward;
-  if(ang>PHYS.maxAngle) state.running=false;
-}
-
-// Observation
-function buildObservation(){
-  const obs=new Float32Array(4);
-  obs[0]=state.cartX/(W/2);
-  obs[1]=state.cartV/200; // Python clip -1~1
-  obs[2]=state.poleAngle/PHYS.maxAngle;
-  obs[3]=state.poleOmega/10;
-  return obs;
-}
-
-// ONNX
+// ONNX load
 let session=null, modelReady=false;
 async function initModel(){
+  loaderEl.style.display='inline-block';
+  statusEl.textContent='모델 로드 중...';
   try{
-    loaderEl.style.display='inline-block';
-    statusEl.textContent='모델 로드 중...';
     session=await ort.InferenceSession.create(MODEL_URL);
     modelReady=true;
     loaderEl.style.display='none';
     statusEl.textContent='모델 로드 완료';
     statusEl.style.color='#0b66a6';
+    console.log('ONNX loaded:',session);
   } catch(e){
     loaderEl.style.display='none';
     statusEl.textContent='모델 로드 실패';
     statusEl.style.color='#b22222';
-    console.error('Failed to load ONNX model',e);
+    console.error(e);
   }
 }
 await initModel();
 
-// AI inference
+// ONNX inference
 async function inferAction(){
-  if(!modelReady) return null;
-  const obs=buildObservation();
-  const input=new ort.Tensor('float32', obs, OBS_SHAPE);
-  const feeds={'observation':input};
-  try{
-    const results=await session.run(feeds);
-    let out=results['action']||results[Object.keys(results)[0]];
-    let outData=out.data||out.toTypedArray?.()||out;
-    if(outData.length>1){
-      let maxIdx=0,maxVal=outData[0];
-      for(let i=1;i<outData.length;i++){if(outData[i]>maxVal){maxVal=outData[i]; maxIdx=i;}}
-      return {discrete:true, idx:maxIdx, N:outData.length};
-    } else return {discrete:false, isContinuous:true, value:outData[0]};
-  } catch(e){ console.error(e); return null;}
+  if(!modelReady) return {discrete:true, idx:1}; // 안전 fallback
+  const obs=buildObservationArray();
+  const tensor=new ort.Tensor('float32', obs, OBS_SHAPE);
+  const feeds={'observation':tensor};
+  const results=await session.run(feeds);
+  const out=results['action']||results[Object.keys(results)[0]];
+  const data=out.data||out.toTypedArray?.()||out;
+  if(data.length>1){
+    let maxIdx=0, maxVal=data[0];
+    for(let i=1;i<data.length;i++) if(data[i]>maxVal){maxIdx=i; maxVal=data[i];}
+    return {discrete:true, idx:maxIdx};
+  } else return {discrete:false, isContinuous:true, value:data[0]};
 }
 
-// Game loop
-let frame=0;
-function loop(){
-  frame++; drawScene();
-  if(!state.running){ setTimeout(resetState,1000);}
-  if(modelReady && state.running){
-    inferAction().then(a=>{if(a) stepPhysics(a);});
+// Main loop
+async function loop(){
+  drawScene();
+  if(state.running){
+    const action = await inferAction();
+    stepPhysics(action);
+  } else {
+    setTimeout(resetState,1000);
   }
   scoreEl.textContent=Math.round(state.score*10);
   stepsEl.textContent=state.steps;
   requestAnimationFrame(loop);
 }
 loop();
-
 })();
 </script>
 </body>
