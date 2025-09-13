@@ -1,0 +1,76 @@
+<!-- filepath: c:\Users\User\Desktop\colab\index.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Balance Bot (Training Env)</title>
+    <script src="https://cdn.jsdelivr.net/npm/matter-js/build/matter.min.js"></script>
+    <style>body,html{margin:0;padding:0;width:100%;height:100%;display:flex;justify-content:center;align-items:center;background-color:#f0f2f5;}canvas{box-shadow:0 10px 25px rgba(0,0,0,0.1);border-radius:12px;}</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<script>
+    const canvas = document.getElementById('gameCanvas'), ctx = canvas.getContext('2d');
+    const gameWidth = 600, gameHeight = 400;
+    canvas.width = gameWidth; canvas.height = gameHeight;
+    const physical = { maxForce: 0.05, maxAngle: 12 * (Math.PI / 180), dt: 1000 / 50 };
+    const { Engine, World, Bodies, Body, Constraint } = Matter;
+    let engine, cart, pole;
+    const socket = new WebSocket('ws://localhost:8765');
+    socket.onopen = () => console.log("Python 학습 스크립트의 지시를 기다립니다.");
+    socket.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.command === 'reset') {
+            const observation = resetState();
+            socket.send(JSON.stringify({ type: 'reset', observation: Array.from(observation) }));
+        } else if (msg.command === 'step') {
+            const result = step(msg.action);
+            socket.send(JSON.stringify({ type: 'step', ...result }));
+        }
+        draw();
+    };
+    function initPhysics() {
+        engine = Engine.create(); engine.world.gravity.y = 1.6; engine.timing.delta = physical.dt;
+        const cartW = 60, cartH = 30, poleW = 8, poleL = 120, cartY = gameHeight - 120;
+        cart = Bodies.rectangle(gameWidth/2, cartY, cartW, cartH, { friction: 0.01, frictionAir: 0.01, density: 0.01 });
+        pole = Bodies.rectangle(gameWidth/2, cartY - poleL/2, poleW, poleL, { friction: 0, frictionAir: 0, density: 0.0005 });
+        const joint = Constraint.create({ bodyA: cart, bodyB: pole, pointA: { x: 0, y: -cartH/2 }, pointB: { x: 0, y: poleL/2 }, stiffness: 1, length: 0 });
+        World.add(engine.world, [cart, pole, joint]);
+    }
+    function resetState() {
+        if (!engine) initPhysics();
+        World.clear(engine.world); initPhysics();
+        Body.setPosition(cart, { x: gameWidth/2 + (Math.random()-0.5)*10, y: cart.position.y });
+        Body.setAngle(pole, (Math.random()-0.5)*0.1);
+        return getObservation();
+    }
+    function step(action) {
+        let force = 0;
+        if (action === 0) force = -physical.maxForce; if (action === 2) force = physical.maxForce;
+        Body.applyForce(cart, cart.position, { x: force, y: 0 });
+        Engine.update(engine);
+        Body.setPosition(cart, { x: cart.position.x, y: gameHeight - 120 }); Body.setVelocity(cart, { x: cart.velocity.x, y: 0 }); Body.setAngle(cart, 0);
+        if (cart.position.x < 50) Body.setPosition(cart, { x: 50, y: cart.position.y }); if (cart.position.x > gameWidth - 50) Body.setPosition(cart, { x: gameWidth - 50, y: cart.position.y });
+        const obs = getObservation(), terminated = Math.abs(pole.angle) > physical.maxAngle;
+        let reward = terminated ? -1.0 : 1.0 - (Math.abs(obs[2])**2) - 0.1*Math.abs(obs[0]);
+        return { observation: Array.from(obs), reward: reward, terminated: terminated, truncated: false };
+    }
+    function getObservation() {
+        const obs = new Float32Array(4), clip = (v,min,max) => Math.max(min,Math.min(v,max));
+        obs[0] = (cart.position.x - gameWidth/2) / (gameWidth/2); obs[1] = clip(cart.velocity.x/15.0, -1, 1);
+        obs[2] = clip(pole.angle/physical.maxAngle, -1, 1); obs[3] = clip(pole.angularVelocity/2.0, -1, 1);
+        return obs;
+    }
+    function draw() {
+        ctx.fillStyle = '#eef1f5'; ctx.fillRect(0, 0, gameWidth, gameHeight);
+        ctx.strokeStyle = '#bdc3c7'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(50, gameHeight-120); ctx.lineTo(gameWidth-50, gameHeight-120); ctx.stroke();
+        const drawBody = (body, color) => {
+            ctx.fillStyle = color; ctx.beginPath();
+            body.vertices.forEach((v, i) => i === 0 ? ctx.moveTo(v.x, v.y) : ctx.lineTo(v.x, v.y));
+            ctx.closePath(); ctx.fill();
+        };
+        drawBody(cart, '#3498db'); drawBody(pole, '#e74c3c');
+    }
+</script>
+</body>
+</html>

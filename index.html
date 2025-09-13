@@ -1,292 +1,298 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Minimal Balance — ONNX Hyper-Casual</title>
-<style>
-:root {
-  --bg1: #f6fbff;
-  --bg2: #e9f7ff;
-  --accent: #4da6ff;
-  --muted: #8aaac6;
-  --card: rgba(255,255,255,0.75);
-}
-html, body {
-  margin: 0;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: Inter, system-ui, -apple-system;
-  background: linear-gradient(180deg,var(--bg1),var(--bg2));
-}
-.wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 18px;
-  user-select: none;
-}
-.canvas-card {
-  width: 640px;
-  padding: 20px;
-  border-radius: 22px;
-  background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(250,250,255,0.85));
-  box-shadow: 0 10px 30px rgba(30,50,80,0.12);
-  display: flex;
-  justify-content: center;
-}
-canvas {
-  display: block;
-  width: 600px;
-  height: 400px;
-  border-radius: 12px;
-  background: transparent;
-  box-shadow: inset 0 -8px 30px rgba(50,90,150,0.02), 0 6px 18px rgba(20,40,70,0.08);
-}
-.hud {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  color: var(--muted);
-  font-size: 13px;
-}
-.pill {
-  background: var(--card);
-  padding: 8px 12px;
-  border-radius: 999px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  box-shadow: 0 2px 8px rgba(20,40,70,0.04);
-}
-#status {
-  font-weight: 600;
-  color: #125a9c;
-}
-.score {
-  font-weight: 700;
-  font-size: 16px;
-  color: #11385a;
-}
-.pulse {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--accent);
-  opacity: 0.95;
-  transform-origin: center;
-  animation: pulse 1s infinite ease-in-out;
-}
-@keyframes pulse {
-  0% { transform: scale(0.7); opacity: 0.6; }
-  50% { transform: scale(1.15); opacity: 1; }
-  100% { transform: scale(0.7); opacity: 0.6; }
-}
-.critique-box {
-  margin-top: 8px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(255,255,255,0.6);
-  font-size: 12px;
-  color: #4a5968;
-  max-width: 600px;
-  line-height: 1.25;
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Balance Bot (Matter.js)</title>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/matter-js/build/matter.min.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f0f2f5;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+        #loader, #end-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            color: #333;
+            font-size: 18px;
+            transition: opacity 0.5s ease;
+            text-align: center;
+        }
+        #end-screen {
+            visibility: hidden;
+            opacity: 0;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #09f;
+            margin-bottom: 16px;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body>
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-<div class="wrap">
-  <div class="canvas-card">
-    <canvas id="game" width="600" height="400"></canvas>
-  </div>
-  <div class="hud">
-    <div class="pill">
-      <div id="loader" class="pulse" style="display:none"></div>
-      <div id="status">모델 로드 전</div>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    <div id="loader">
+        <div class="spinner"></div>
+        AI 모델 로딩 중...
     </div>
-    <div class="pill">
-      <div class="score" id="score">0</div>
-      <div style="color:var(--muted); font-size:12px;">score</div>
+    <div id="end-screen">
+        <p id="end-stats"></p>
+        <p>3초 후 다시 시작합니다...</p>
     </div>
-    <div class="pill">
-      <div style="font-size:13px; color:var(--muted);">steps</div>
-      <div id="steps" style="font-weight:700; margin-left:6px;">0</div>
-    </div>
-  </div>
-  <div id="critique" class="critique-box">
-    <strong>Self-check:</strong>
-    <ul>
-      <li>입력: 물리 상태 [카트 위치, 카트 속도, 막대 각도, 막대 각속도]</li>
-      <li>정규화: 각 변수를 Python과 동일하게 스케일링</li>
-      <li>출력: argmax 또는 continuous 처리</li>
-    </ul>
-  </div>
 </div>
 
 <script>
-(async()=>{
-const W=600,H=400;
-const OBS_SHAPE=[1,4];
-const MODEL_URL='./model.onnx';
+    // --- 1. 설정 및 초기화 ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const loader = document.getElementById('loader');
+    const endScreen = document.getElementById('end-screen');
+    const endStats = document.getElementById('end-stats');
 
-const canvas=document.getElementById('game');
-const ctx=canvas.getContext('2d',{alpha:false, desynchronized:true});
-const statusEl=document.getElementById('status');
-const loaderEl=document.getElementById('loader');
-const scoreEl=document.getElementById('score');
-const stepsEl=document.getElementById('steps');
+    const gameWidth = 600;
+    const gameHeight = 400;
+    canvas.width = gameWidth;
+    canvas.height = gameHeight;
 
-// Python 환경과 최대한 동일한 물리 상수
-const physical = {
-  dt: 1/50,       // Python dt
-  cartMass: 1.0,
-  poleMass: 0.1,
-  poleLength: 120,
-  gravity: 9.81,
-  maxForce: 15000,
-  friction: 0.02
-};
+    // 물리 상수
+    const physical = {
+        maxForce: 0.05, // Matter.js에 맞게 힘 스케일 조정
+        maxAngle: 12 * (Math.PI / 180),
+        dt: 1000 / 50, // ms 단위
+    };
 
-let state = {
-  cartX:0, cartV:0,
-  poleAngle:0.06*(Math.random()-0.5),
-  poleOmega:0,
-  score:0, steps:0, running:true
-};
+    // Matter.js 모듈
+    const { Engine, World, Bodies, Body, Constraint, Composite } = Matter;
 
-function resetState(){
-  state.cartX=0; state.cartV=0;
-  state.poleAngle=0.06*(Math.random()-0.5);
-  state.poleOmega=0;
-  state.score=0; state.steps=0;
-  state.running=true;
-}
+    // 물리 엔진 및 객체
+    let engine;
+    let cart, pole;
 
-// Python과 동일한 observation 생성
-function buildObservationArray(){
-  return new Float32Array([
-    state.cartX / (W/2),
-    Math.max(-1, Math.min(state.cartV / 200, 1)),
-    Math.max(-1, Math.min(state.poleAngle / (12*Math.PI/180), 1)),
-    Math.max(-1, Math.min(state.poleOmega / 10, 1))
-  ]);
-}
+    // 게임 상태
+    let stepCount = 0;
+    let isGameOver = false;
 
-// Physics update (Euler integration, substeps 4회)
-function stepPhysics(action){
-  let force=0;
-  if(action.discrete) {
-    const idx=action.idx;
-    force = {0:-physical.maxForce,1:0,2:physical.maxForce}[idx];
-  } else if(action.isContinuous){
-    force = action.value * physical.maxForce;
-  }
-  const dt = physical.dt/4;
-  for(let i=0;i<4;i++){
-    state.cartV += (force/(physical.cartMass+physical.poleMass))*dt;
-    state.cartV *= (1-physical.friction);
-    state.cartX += state.cartV*dt*40;
-    const gTerm = (physical.gravity/(physical.poleLength*0.1))*Math.sin(state.poleAngle);
-    const torqueEffect = -force*0.001;
-    const damp = -0.03*state.poleOmega;
-    let alpha = gTerm + torqueEffect + damp;
-    state.poleOmega += alpha*dt;
-    state.poleOmega *= (1-0.005);
-    state.poleAngle += state.poleOmega*dt;
-  }
-  const maxX=W/2-90;
-  if(state.cartX<-maxX){state.cartX=-maxX; state.cartV*=-0.2;}
-  if(state.cartX>maxX){state.cartX=maxX; state.cartV*=-0.2;}
-  const ang=Math.abs(state.poleAngle);
-  if(ang>0.9) state.running=false;
-  state.steps++;
-  state.score += Math.max(0,(0.8-ang)*0.2);
-}
+    // ONNX 런타임 세션
+    let session;
+    let isModelReady = false;
 
-// Canvas draw
-function drawScene(){
-  ctx.clearRect(0,0,W,H);
-  const g=ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,'#f8fdff'); g.addColorStop(1,'#eaf8ff');
-  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    // --- 2. 물리 및 게임 상태 관리 ---
+    function initPhysics() {
+        engine = Engine.create();
+        engine.world.gravity.y = 1.6; // Pymunk의 981과 유사한 효과를 내도록 튜닝
+        engine.timing.delta = physical.dt;
 
-  const centerX=W/2+state.cartX; const cartY=H-90;
+        const cartW = 60, cartH = 30;
+        const poleW = 8, poleLength = 120;
+        const cartY = gameHeight - 120;
 
-  // Pole
-  ctx.save();
-  ctx.translate(centerX, cartY-28);
-  ctx.rotate(state.poleAngle);
-  ctx.beginPath();
-  ctx.strokeStyle='var(--muted)';
-  ctx.lineWidth=14; ctx.lineCap='round';
-  ctx.moveTo(0,0); ctx.lineTo(0,-physical.poleLength);
-  ctx.stroke(); ctx.restore();
+        // 카트
+        cart = Bodies.rectangle(gameWidth / 2, cartY, cartW, cartH, {
+            friction: 0.01,
+            frictionAir: 0.01, // 마찰력
+            density: 0.01, // cartMass 1.0과 유사하게
+        });
 
-  // Cart
-  ctx.save();
-  ctx.fillStyle='#ffffff';
-  ctx.strokeStyle='rgba(100,120,150,0.1)';
-  ctx.lineWidth=2;
-  ctx.fillRect(centerX-72, cartY-28, 144, 56);
-  ctx.strokeRect(centerX-72, cartY-28, 144, 56);
-  ctx.restore();
-}
+        // 막대
+        pole = Bodies.rectangle(gameWidth / 2, cartY - poleLength / 2, poleW, poleLength, {
+            friction: 0,
+            frictionAir: 0,
+            density: 0.0005, // poleMass 0.1과 유사하게
+        });
 
-// ONNX load
-let session=null, modelReady=false;
-async function initModel(){
-  loaderEl.style.display='inline-block';
-  statusEl.textContent='모델 로드 중...';
-  try{
-    session=await ort.InferenceSession.create(MODEL_URL);
-    modelReady=true;
-    loaderEl.style.display='none';
-    statusEl.textContent='모델 로드 완료';
-    statusEl.style.color='#0b66a6';
-    console.log('ONNX loaded:',session);
-  } catch(e){
-    loaderEl.style.display='none';
-    statusEl.textContent='모델 로드 실패';
-    statusEl.style.color='#b22222';
-    console.error(e);
-  }
-}
-await initModel();
+        // 조인트
+        const joint = Constraint.create({
+            bodyA: cart,
+            bodyB: pole,
+            pointA: { x: 0, y: -cartH / 2 },
+            pointB: { x: 0, y: poleLength / 2 },
+            stiffness: 1,
+            length: 0
+        });
 
-// ONNX inference
-async function inferAction(){
-  if(!modelReady) return {discrete:true, idx:1}; // 안전 fallback
-  const obs=buildObservationArray();
-  const tensor=new ort.Tensor('float32', obs, OBS_SHAPE);
-  const feeds={'observation':tensor};
-  const results=await session.run(feeds);
-  const out=results['action']||results[Object.keys(results)[0]];
-  const data=out.data||out.toTypedArray?.()||out;
-  if(data.length>1){
-    let maxIdx=0, maxVal=data[0];
-    for(let i=1;i<data.length;i++) if(data[i]>maxVal){maxIdx=i; maxVal=data[i];}
-    return {discrete:true, idx:maxIdx};
-  } else return {discrete:false, isContinuous:true, value:data[0]};
-}
+        World.add(engine.world, [cart, pole, joint]);
+    }
 
-// Main loop
-async function loop(){
-  drawScene();
-  if(state.running){
-    const action = await inferAction();
-    stepPhysics(action);
-  } else {
-    setTimeout(resetState,1000);
-  }
-  scoreEl.textContent=Math.round(state.score*10);
-  stepsEl.textContent=state.steps;
-  requestAnimationFrame(loop);
-}
-loop();
-})();
+    function resetState() {
+        if (!engine) initPhysics();
+
+        // 기존 객체 제거 및 재생성
+        World.clear(engine.world);
+        initPhysics();
+
+        // 초기 위치 및 속도 랜덤화
+        const initialX = gameWidth / 2 + (Math.random() - 0.5) * 10;
+        const initialAngle = (Math.random() - 0.5) * 0.1;
+
+        Body.setPosition(cart, { x: initialX, y: cart.position.y });
+        Body.setVelocity(cart, { x: (Math.random() - 0.5) * 5, y: 0 });
+        Body.setAngle(pole, initialAngle);
+        Body.setAngularVelocity(pole, (Math.random() - 0.5) * 0.2);
+
+        stepCount = 0;
+        isGameOver = false;
+        endScreen.style.visibility = 'hidden';
+        endScreen.style.opacity = '0';
+    }
+
+    // --- 4. AI 연동 ---
+    function getObservation() {
+        const obs = new Float32Array(4);
+        const clip = (val, min, max) => Math.max(min, Math.min(val, max));
+
+        // 1. 정규화된 카트 위치
+        obs[0] = (cart.position.x - gameWidth / 2) / (gameWidth / 2);
+        // 2. 정규화된 카트 속도 (스케일 조정)
+        obs[1] = clip(cart.velocity.x / 15.0, -1.0, 1.0);
+        // 3. 정규화된 막대 각도
+        obs[2] = clip(pole.angle / physical.maxAngle, -1.0, 1.0);
+        // 4. 정규화된 막대 각속도 (스케일 조정)
+        obs[3] = clip(pole.angularVelocity / 2.0, -1.0, 1.0);
+
+        return obs;
+    }
+
+    async function getAction(observation) {
+        const tensor = new ort.Tensor('float32', observation, [1, 4]);
+        const feeds = { 'observation': tensor };
+        const results = await session.run(feeds);
+
+        // 단일 값 (행동 인덱스) → Number 변환
+        const action = Number(results.action.data[0]);
+        return action;
+    }
+
+    // --- 5. 렌더링 ---
+    function draw() {
+        ctx.fillStyle = '#eef1f5';
+        ctx.fillRect(0, 0, gameWidth, gameHeight);
+
+        ctx.strokeStyle = '#bdc3c7';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(50, gameHeight - 120);
+        ctx.lineTo(gameWidth - 50, gameHeight - 120);
+        ctx.stroke();
+
+        drawBody(cart, '#3498db');
+        drawBody(pole, '#e74c3c');
+    }
+
+    function drawBody(body, color) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        body.vertices.forEach((v, i) => {
+            if (i === 0) ctx.moveTo(v.x, v.y);
+            else ctx.lineTo(v.x, v.y);
+        });
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    function showEndScreen(reward) {
+        endStats.innerHTML = `스텝: ${stepCount}<br>보상: ${reward.toFixed(2)}`;
+        endScreen.style.visibility = 'visible';
+        endScreen.style.opacity = '1';
+    }
+
+    // --- 6. 게임 루프 ---
+    async function gameLoop() {
+        if (!isModelReady || isGameOver) {
+            requestAnimationFrame(gameLoop);
+            return;
+        }
+
+        stepCount++;
+
+        const observation = getObservation();
+        const actionIndex = await getAction(observation);
+        let force = 0;
+        if (actionIndex === 0) force = -physical.maxForce;
+        if (actionIndex === 2) force = physical.maxForce;
+
+        // 물리 업데이트
+        Body.applyForce(cart, cart.position, { x: force, y: 0 });
+        Engine.update(engine);
+
+        // 카트 y축 및 회전 고정 (GrooveJoint 효과)
+        Body.setPosition(cart, { x: cart.position.x, y: gameHeight - 120 });
+        Body.setVelocity(cart, { x: cart.velocity.x, y: 0 });
+        Body.setAngle(cart, 0);
+
+        // 경계 처리
+        if (cart.position.x < 50) Body.setPosition(cart, { x: 50, y: cart.position.y });
+        if (cart.position.x > gameWidth - 50) Body.setPosition(cart, { x: gameWidth - 50, y: cart.position.y });
+
+        draw();
+
+        if (Math.abs(pole.angle) > physical.maxAngle) {
+            isGameOver = true;
+            showEndScreen(-1.0);
+            setTimeout(() => {
+                resetState();
+                requestAnimationFrame(gameLoop);
+            }, 3000);
+        } else {
+            requestAnimationFrame(gameLoop);
+        }
+    }
+
+    // --- 7. 메인 실행 함수 ---
+    async function main() {
+        try {
+            session = await ort.InferenceSession.create('./ppo_js_balance_bot.onnx');
+            isModelReady = true;
+            console.log("ONNX 모델 로딩 및 세션 생성 완료.");
+            loader.style.opacity = '0';
+            setTimeout(() => {
+                loader.style.display = 'none';
+                resetState();
+                gameLoop();
+            }, 500);
+        } catch (e) {
+            console.error(`모델 로딩 실패: ${e}`);
+            loader.innerHTML = "AI 모델 로딩에 실패했습니다.<br>콘솔을 확인해주세요.";
+        }
+    }
+
+    main();
 </script>
+
 </body>
 </html>
