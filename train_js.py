@@ -54,7 +54,7 @@ class JavaScriptEnv(gym.Env):
 if __name__ == "__main__":
     env = JavaScriptEnv()
     model = PPO("MlpPolicy", env, verbose=1, learning_rate=0.0003, n_steps=2048, batch_size=64, n_epochs=10, gamma=0.99, gae_lambda=0.95, clip_range=0.2, ent_coef=0.0)
-    model.learn(total_timesteps=500000, progress_bar=True)
+    model.learn(total_timesteps=700000, progress_bar=True)
     model.save("ppo_js_balance_bot")
     print("\n학습 완료! 'ppo_js_balance_bot.zip' 파일 저장됨.")
     env.close()
